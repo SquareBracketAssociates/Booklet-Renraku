@@ -5,13 +5,111 @@
 
 Renraku is a framework for defining and processing quality rules. The framework operates with three main concepts: entities, rules and critiques.
 
-!!!! Entities
-Entities are not a part of Renraku, but Renraku is validating entities. Theoretically entity can be any object, but in practice we mostly focus on code entities such as methods, classes, packages, AST nodes.
+- Entities. Entities are not a part of Renraku, but Renraku is validating entities. Theoretically entity can be any object, but in practice we mostly focus on code entities such as methods, classes, packages, AST nodes.
 
-!!!! Rules
-Rules are the objects that describe constraints about entities. A rule can check an entity and produce critiques that describe the violations of the entity according to the rule.
+- Rules. Rules are the objects that describe constraints about entities. A rule can check an entity and produce critiques that describe the violations of the entity according to the rule. Rules are constraint descriptions about entities. Think of a rule as a function that consumes an entity and produces a collection of critiques about it (which can be empty if there are no violations)
 
-!!!! Critiques
-Critique is an object that binds an entity with a rule that is violated by that entity. The critique describes a specific violation, and may provide a solutions to fix it.
+- Critiques. Critique is an object that binds an entity with a rule that is violated by that entity. The critique describes a specific violation, and may provide a solutions to fix it.
 
-Rules are constraint descriptions about entities. Think of a rule as a function that consumes an entity and produces a collection of critiques about it (which can be empty if there are no violations)
+
+
+
+
+
+!!! Critiques
+
+Critique is an object that binds an entity with a rule that is violated by that entity. The critique describes a specific violation, and may provide a solution to fix it.
+
+==ReAbstractCritique== is the root of the critiques hierarchy.
+
+A critique has a reference to the rule that reported the violation.
+The rule's ==name== is used as the critique’s ==title== and the rule's ==rationale== is used as the ==description== of the critique.
+
+A critique has a reference to the criticized entity. This link is established through ==ReSourceAnchor==. A source anchor has a reference to the actual class, method, or other entity that is criticized. An anchor also has a ==providesInterval== method that returns a boolean indicating if the anchor provides a selection interval to the actual source of the critique. The interval can be accessed through the ==interval== method.
+
+There are two subclasses of ==ReSourceAnchor==.
+==ReIntervalSourceAnchor== stores the actual interval object which is set during initialization.
+==ReSearchStringSourceAnchor== stores a searchString which will be searched for in the entities source code on demand to find an interval of substring.
+
+A critique has the ==providesChange== method which returns a boolean value specifying whether the critique can provide a change which will resolve the issue.
+The ==change== method can be used to obtain an object of ==RBRefactoryChange== kind.
+
+One can override ==actions== method to return a list of ==RePropertyAction== objects. Tools can use these objects to provide a user with custom actions defined by critiques themselves.
+
+I am an action that appears in the Nautiluas qa plugin next the the item's title.
+
+icon - a Form that will appear on the button (green square by default)
+
+description - the description that will be present on popup on hower
+
+action - a two (ortional) parameter block that is evaluated with the critic and the current code entity (class, method…) when the button is pressed
+ No newline at end of file
+
+
+
+
+
+
+
+
+!!! Migrating rules to renraku
+
+Lately Pharo tools moved to Renraku framework which requires a slightly different implementation from rules as defined in the refactoring browser. 
+	
+While you can achieve much more features by reading the whole documentation and using the complete set of Renraku possibilities, this book contains a few simple steps to help you converting existing rules to work with Renraku model.
+
+!!!!Generic rule
+To convert a generic rule (one that simply checks method, class or package) to work with Renraku you have to follow 3 simple steps:
+
+- Inheritance: change superclass to ReAbstractRule.
+- Interest: Specify which entities your rules is interested in by overriding a method on the class side to return true. If the rule was checking methods, then  override =checksMethod==, for classes override ==checksClass==, and for packages ==checksPackage==.
+- Checking: Implement ==basicCheck:== in a way that it will return true if the argument violated the rule and false otherwise. The quality tools will pass you only the arguments of the type you've expressed interest in.
+
+!!!! To convert parse tree rules 
+
+Parse tree rules are subclasses of RBParseTreeLintRule, change their superclass to ReNodeMatchRule.
+
+Then change the initialization method. Instead of sending match-specifying methods to ==matcher==, send them to ==self==. The rest of API is similar:
+
+- #matches:do: -> #matches:
+- #matchesMethod:do: -> #addMatchingMethod:
+- #matchesAnyOf:do: -> #matchesAny:
+
+So the old initialization:
+[[[
+	self matcher 
+		matches: '`var := `var'
+		do: [ :node :answer | node ]
+]]]		
+will become:
+[[[
+	self matches: '`var := `var'
+]]]
+
+You have noticed that new API is missing the "do:" part. First of all, almost no rules use this functionality and you can check node in the matching expression with ==`{:node | "check node" }== syntax.
+
+
+
+!!!! Rewrite rules
+
+To convert parse tree rules, subclasses of ==RBTransformationRule==, change their superclass to ==ReNodeRewriteRule==.
+
+Then change the initialization method. Instead of sending transformation-specifying methods to ==rewriteRule==, send them to ==self==. The rest of API is similar:
+- ==replace:with:== -> ==replace:with:== (noChange)
+- ==replaceMethod:with:== -> ==addMatchingMethod:rewriteTo:==
+- ==?== -> ==replace:by:== (second argument is a block which accepts matched node and returns a node that should be used for replacement).
+
+So the old initialization:
+
+[[[
+self rewriteRule
+	replace: '`var := `var' with: ''
+]]]
+will become:
+[[[
+self replace: '`var := `var' with: ''
+]]]
+
+!!!! Better post-checks
+The new rules also give you a move powerful way of post-checking matched nodes. You can override ==afterCheck:mappings:== method and return true if node really violates the rule or false otherwise. The first argument passed to the method is the matched node object, while the second argument is a dictionary of bindings for the wildcards in the rule. 
+For example if the pattern =='`var := `var'== will match expression =='a := a'== the matches dictionary will contain one entry where key is ==RBPatternVariableNode(`var)== and value is ==RBVariableNode(a)==.
