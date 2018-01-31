@@ -141,6 +141,237 @@ Use the following methods in the initialization to setup your subclass:
 
 
 
+!!! Example
+
+Si j'ai tout bien compris, le système fonctionne avec deux concepts principaux
+abstraits, les "ReAbstractRule" et les "ReAbstractCritiques".
+
+Chaque "ReAbstractRule" représente une règle de validation statique qui peut
+être appliquée soit sur une "Class", sur une "Method", un "Package" ou un "Node"
+(par "Node", on parle d'un "Node" ast). Une "ReAbstractRule" précise, entre
+autre, le message de la règle, un niveau de sévérité ('warning' par défaut) et
+une catégorie dans laquelle elle appartient (par exemple 'Optimization').
+
+Les "ReAbstractRule", une fois évaluée, retourne une liste de
+"ReAbstractCritiques". Chaque "ReAbstractCritique" est liée  précisément à la
+portion de code où la règle a faillit (du moins, plus ou moins, nous allons le
+voir plus loin). Elle permet aussi d'associer, si on le souhaite, un "quickfix"
+pour automatiquement modifier le code.
+
+Dans notre cas, le but de la règle est de mettre en évidence les variables
+temporaires non utilisées dans le code (uniquement non utilisées, pas non
+initialisée ou autre). Si des variables temporaires sont identifiées, alors, le
+quickfix proposé est de supprimer la variable en question.
+
+Pour faire ceci, on commence par créer une nouvelle règle
+==NRTemporaryNeverUsedRule== dans un package ==NewRule==, en héritant de ==ReAbstractRule==:
+
+[[[
+ReAbstractRule subclass: #NRTemporaryNeverUsedRule
+	instanceVariableNames: ''
+	classVariableNames: ''
+	package: 'NewRules'
+]]]
+
+Comme notre règle travaille sur des éléments très fin d'un méthode analysée, on ne peut rester au niveau de la "méthode" pour l'analyse, il faut décendre au niveau de chaque ==Node== de l'ast de la méthode. Il faut donc indiquer que cette règle s'applique uniquement sur des ==Nodes==. Pour faire ceci, il faut surcharger la méthode de classe ==ReAbstractRule class>>checksNode==:
+
+[[[
+NRTemporaryNeverUsedRule class >> checksNode
+	^ true
+]]]
+
+On précise ensuite le groupe auquel la règle va être associé en surchargeant ==ReAbstractRule>>#group==:
+
+[[[
+NRTemporaryNeverUsedRule >> group
+	^ 'Optimization'
+]]]
+
+Puis, on indique le message qui sera affiché si la règle trouve un élément
+fautif en surchargeant ==ReAbstractRule >> name==:
+
+[[[
+NRTemporaryNeverUsedRule>>name
+	^ 'Temporary variable is never used'
+]]]
+
+Une règle doit ensuite fournir une implémentation de "#basicCheck:". Cette
+méthode retourne vrai si l'élément passé en argument viole la règle. Elle est
+implémentée ici simplement, si le noeud est une variable temporaire, alors, on
+vérifie qu'elle a bien été utilisée dans la séquence de node qui la contient.
+
+[[[
+NRTemporaryNeverUsedRule>>basicCheck: aNode
+	aNode isTemp ifFalse: [ ^ false ].
+	^ (self checkTemp: aNode isUsedIn: (aNode whoDefines: aNode name)) not
+]]]
+
+L'implémentation du sélecteur ==checkTemp:isUsedIn:== est plutôt directe. On
+regarde dans toute les expressions de la séquence d'instruction s'il existe une
+variable qui est utilisée est qui porte le même nom que la variable temporaire
+dont on veut savoir si elle est effectivement utilisée.
+
+[[[
+NRTemporaryNeverUsedRule>>checkTemp: aTemp isUsedIn: statements
+	statements
+		do: [ :statement |
+			statement
+				nodesDo: [ :node |
+					(node isVariable and: [ node name = aTemp name and: [ node isUsed ] ])
+						ifTrue: [ ^ true ] ] ].
+	^ false
+]]]
+
+
+Maintenant que la règle est écrite, il est possible d'écrire une nouvelle
+critique qui va permettre de mettre en surbrillance dans le code la variable
+temporaire fautive. On commence donc par créer une sous-classe de
+==ReAbstractCritique==. Comme cette critique va devoir garder un lien vers le node
+temporaire, on lui ajoute une variable d'instance "temp" (le nom est pas génial) :
+
+[[[
+	"Critique creation"
+ReAbstractCritique subclass: #NRTemporaryNeverUsedCritique
+	instanceVariableNames: 'temp'
+	classVariableNames: ''
+	package: 'NewRules'
+]]]
+
+On ajoute aussi des accesseurs à la variable d'instance ==temp==:
+
+[[[
+NRTemporaryNeverUsedCritique>>temporary
+	^ temp
+]]]
+
+[[[
+NRTemporaryNeverUsedCritique>>temporary: aTemp
+	temp := aTemp
+]]]
+
+On propose maintenant une méthode de classe pour la création de nouvelles
+instances qui va prendre en paramètre un "ReSourceAnchor". Un "ReSourceAnchor"
+est un wrapper vers l'obets d'intérêt :
+
+[[[
+NRTemporaryNeverUsedCritique class>>withAnchor: anAnchor by: aRule temporary: aTemp
+	^ (self withAnchor: anAnchor by: aRule)
+		temporary: aTemp;
+		yourself
+]]]
+
+Avec cette méthode, la "Critique" créée aura à la fois un lien vers l'objet
+d'intérêt via le "sourceAnchor", mais aussi un lien au node représentant la
+variable temporaire fautive.
+
+Néanmoins, dans l'état actuel des choses, la "Critique" créée n'est pas encore
+liée à notre nouvelle règle. Par défaut, ce sont des instances de
+"ReTrivialCritique" qui sont proposée. Pour changer ceci, il faut surcharger
+"ReAbstractRule>>#critiqueFor:". À la place de la création de la
+"ReTrivialCritique", on va créer une instance de la "Critique" que l'on vient
+juste d'écire :
+
+[[[
+NRTemporaryNeverUsedRule>>critiqueFor: aTemp
+	^ NRTemporaryNeverUsedCritique
+		withAnchor: (self anchorFor: aTemp)
+		by: self
+		temporary: aTemp
+]]]
+
+Il faut noter ici l'utilisation du message "#anchorFor:" qui permet d'obtenir un
+"ReSourceAnchor" à partir d'un élément.
+
+Dans l'état actuel, c'est déjà pas mal, mais pas complètement satisfaisant. On
+remarque que le "ReSourceAnchor" créé est un simple "ReSourceAnchor" et qu'il ne
+donne pas plus d'information. Dans notre cas, nous aimerions pouvoir avoir accès à
+l'interval qui représente la variable dans le source code (en gros, le début et
+la fin de la temporaire dans la variable).
+
+Il existe plusieur sous-classes de "ReSourceAnchor", dont
+"ReIntervalSourceAnchor" qui stocke par la même occasion l'interval de l'objet
+"observé" dans le code source. On surcharge donc "ReAbstractRule#anchorFor:" dans notre règle :
+
+[[[
+NRTemporaryNeverUsedRule>>anchorFor: aNode
+	^ ReIntervalSourceAnchor entity: aNode interval: aNode sourceInterval
+]]]
+
+Maintenant, la règle et la critique créé sont liée. Néanmoins, on ne peux
+toujours pas effectuer de modification automatiquement du code. Il faut fournir
+quelques méthode en plus à notre nouvelle critique pour ça. La méthode
+"#providesChange" va permettre d'indiquer que notre critique fournit un moyen de
+"fix" le code, et la méthode "#change" va retourner une instance de
+"RBRefactoryChange". Cette instance représente la modification effecivement
+effectuée sur le code source. Il en existe beaucoup et certaines sont
+probablement très pratiques, mais celle que j'ai utilisée est la
+"RBAddMethodChange".
+
+[[[
+NRTemporaryNeverUsedCritique>>providesChange
+	^ true
+]]]
+
+[[[
+NRTemporaryNeverUsedCritique>>change
+	| parseTree |
+	parseTree := sourceAnchor entity parseTree.
+	parseTree
+		nodesDo: [ :node |
+			node isSequence
+				ifTrue: [ node removeTemporaryNamed: temp name ] ].
+	"alternative possible :
+	rewriter := RBParseTreeRewriter removeTemporaryNamed: temp name.
+	parseTree := rewriter executeTree: sourceAnchor entity parseTree; tree."
+	^ RBAddMethodChange compile: parseTree newSource in: sourceAnchor entity methodClass
+]]]
+
+La méthode de modification du code source est elle aussi plutôt directe, on
+traverse l'ast et on enlève les "temporary" fautives de chaques séquences. Il
+faut noter ici que le "sourceAnchor entity" retourne la méthode dans laquelle le
+soucis a été détecté et non pas le node. Même si l'on a explicitement créé la
+"critique" avec le "TemporaryNode" comme "sourceAnchor", il se trouve que
+"ReCriticEngine>>#nodeCritiquesOf:" réassigne la "CompiledMethode" comme
+"sourceAnchor" après (on peut le voir l.27 à 31) :
+
+[[[
+rule
+	check: node
+	forCritiquesDo: [ :critique |
+		critique sourceAnchor initializeEnitity: aMethod. 
+		# stuffs that overrides the node, also typo: '.*Enitity' -> '.*Entity'
+		critiques add: critique ]
+]]]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 !! Extending renraku 
 SmartTest selects automatically some tests to be run automatically each time a new method is compiled. 
