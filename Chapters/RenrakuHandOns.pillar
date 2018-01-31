@@ -142,20 +142,22 @@ Use the following methods in the initialization to setup your subclass:
 
 
 !!! Example
+There are two main concepts in Renraku rule and critiques. These two concepts 
+are represented by abstract classes:  ==ReAbstractRule== and ==ReAbstractCritiques==.
 
-Si j'ai tout bien compris, le système fonctionne avec deux concepts principaux
-abstraits, les "ReAbstractRule" et les "ReAbstractCritiques".
+Each ==ReAbstractRule== represents  a static validation rule that can be applied 
+on a class, method, package or a node (a node refers to an AST node).
 
-Chaque "ReAbstractRule" représente une règle de validation statique qui peut
-être appliquée soit sur une "Class", sur une "Method", un "Package" ou un "Node"
-(par "Node", on parle d'un "Node" ast). Une "ReAbstractRule" précise, entre
-autre, le message de la règle, un niveau de sévérité ('warning' par défaut) et
-une catégorie dans laquelle elle appartient (par exemple 'Optimization').
+Une ==ReAbstractRule== specifies the messages of the rule, its severity ('warning' is the default) 
+and the category in which the rule belongs (for example 'Optimization').
 
-Les "ReAbstractRule", une fois évaluée, retourne une liste de
-"ReAbstractCritiques". Chaque "ReAbstractCritique" est liée  précisément à la
-portion de code où la règle a faillit (du moins, plus ou moins, nous allons le
-voir plus loin). Elle permet aussi d'associer, si on le souhaite, un "quickfix"
+Once executed, ==ReAbstractRule== returns a list of  ==ReAbstractCritiques==. 
+Each ==ReAbstractCritique== is linked precisely to the place where the rule failed. 
+
+It is also possible to specify to automatically address the problem. 
+
+
+Elle permet aussi d'associer, si on le souhaite, un "quickfix"
 pour automatiquement modifier le code.
 
 Dans notre cas, le but de la règle est de mettre en évidence les variables
