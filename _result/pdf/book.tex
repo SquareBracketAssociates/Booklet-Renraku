@@ -1,0 +1,579 @@
+% -*- mode: latex; -*- mustache tags:  
+\documentclass[10pt,twoside,english]{_support/latex/sbabook/sbabook}
+\let\wholebook=\relax
+
+\usepackage{import}
+\subimport{_support/latex/}{common.tex}
+
+%=================================================================
+% Debug packages for page layout and overfull lines
+% Remove the showtrims document option before printing
+\ifshowtrims
+  \usepackage{showframe}
+  \usepackage[color=magenta,width=5mm]{_support/latex/overcolored}
+\fi
+
+
+% =================================================================
+\title{Extending Renraku: the Quality Model of Pharo}
+\author{Yuriy Timchuk, Stéphane Ducasse}
+\series{Square Bracket tutorials}
+
+\hypersetup{
+  pdftitle = {Extending Renraku: the Quality Model of Pharo},
+  pdfauthor = {Yuriy Timchuk, Stéphane Ducasse},
+  pdfkeywords = {project template, Pillar, Pharo, Smalltalk}
+}
+
+
+% =================================================================
+\begin{document}
+
+% Title page and colophon on verso
+\maketitle
+\pagestyle{titlingpage}
+\thispagestyle{titlingpage} % \pagestyle does not work on the first one…
+
+\cleartoverso
+{\small
+
+  Copyright 2017 by Yuriy Timchuk, Stéphane Ducasse.
+
+  The contents of this book are protected under the Creative Commons
+  Attribution-ShareAlike 3.0 Unported license.
+
+  You are \textbf{free}:
+  \begin{itemize}
+  \item to \textbf{Share}: to copy, distribute and transmit the work,
+  \item to \textbf{Remix}: to adapt the work,
+  \end{itemize}
+
+  Under the following conditions:
+  \begin{description}
+  \item[Attribution.] You must attribute the work in the manner specified by the
+    author or licensor (but not in any way that suggests that they endorse you
+    or your use of the work).
+  \item[Share Alike.] If you alter, transform, or build upon this work, you may
+    distribute the resulting work only under the same, similar or a compatible
+    license.
+  \end{description}
+
+  For any reuse or distribution, you must make clear to others the
+  license terms of this work. The best way to do this is with a link to
+  this web page: \\
+  \url{http://creativecommons.org/licenses/by-sa/3.0/}
+
+  Any of the above conditions can be waived if you get permission from
+  the copyright holder. Nothing in this license impairs or restricts the
+  author's moral rights.
+
+  \begin{center}
+    \includegraphics[width=0.2\textwidth]{_support/latex/sbabook/CreativeCommons-BY-SA.pdf}
+  \end{center}
+
+  Your fair dealing and other rights are in no way affected by the
+  above. This is a human-readable summary of the Legal Code (the full
+  license): \\
+  \url{http://creativecommons.org/licenses/by-sa/3.0/legalcode}
+
+  \vfill
+
+  % Publication info would go here (publisher, ISBN, cover design…)
+  Layout and typography based on the \textcode{sbabook} \LaTeX{} class by Damien
+  Pollet.
+}
+
+
+\frontmatter
+\pagestyle{plain}
+
+\tableofcontents*
+\clearpage\listoffigures
+
+\mainmatter
+
+
+\chapter{Adding a new quality rule}
+To add a rule, subclass \textcode{ReAbstractRule} or one of the special rule classes that will be discussed. Most of tools rely on the classes hierarchy to select the rules for checking.
+
+Each rule should provide a short name string returned from the \textcode{\#name} method. You also have to override the \textcode{\#rationale} method to return a detailed description about the rule. You may also put the rationale in the class comment, as by default \#rationale method returns the comment of the rule's class.
+
+\section{Specifying an interest}
+The class-side methods \#checksMethod, \#checksClass, \#checksPackage and \#checksNode return true is the rule checks methods, classes or traits, packages and AST nodes respectively. Tools will pass entities of the specified type to the rule for checking. A rule may check multiple types of entities but please avoid checks for types inside of rules. E.g. if a rule checks whether an entity is named with a swearing word and does this by obtaining the name of the entity and matching substrings. It is completely fine to specify that the rule checks classes and packages as you don't have to distinguish which entity was passed to you.
+
+\section{Checking}
+The easiest way to check an entity is to override the \textcode{\#basicCheck:} method. The method accepts an entity as a parameter and returns true if there is a violation and false otherwise.
+
+\section{Advanced checking}
+While there is a default implementation that relies on \textcode{\#basicCheck:} and creates an instance of \textcode{ReTrivialCritique}, it is advised to override the \textcode{\#check:forCritiquesDo:} method. This method accepts an entity and a block which could be evaluated for each detected critique. This means that one rule can detect multiple critiques about one entity. For example, if a rule checks for unused variables it can report all of them with a dedicated critique for each.
+
+The block that should be evaluated for each critique may accept one argument: the critique object, this is why you have to evaluate it with \#cull:. You may use the \textcode{\#critiqueFor:} method if you don't feel comfortable with critiques yes. For example:
+\begin{displaycode}{smalltalk}
+    self critiqueFor: anEntity
+\end{displaycode}
+
+will return \textcode{ReTrivialCritique} about the entity. Later you can update your code to create other kinds of critiques more suitable for your case.
+
+\section{Testing}
+It is fairly easy to run your rule and obtain the results. Just create an instance of it and send it the \textcode{\#check:} message with the entity you want to check. The result is a collection of critiques. For example inspecting
+\begin{displaycode}{smalltalk}
+RBExcessiveMethodsRule new check: Object
+\end{displaycode}
+
+should give you a collection with one critique (because the Object class always has many methods ;) ). Go on click on the critique item and inspect it. You will see that there is a special \symbol{34}description\symbol{34} tab. This is the power of critique objects, they can present themselves in a different way. Guess what: you can even visualize the critique if needed.
+
+\section{Group and Severity}
+It's a good idea to assign your rule to a specific group. For this override the \#group method and return string with the name of the group. While you can use any name you want, maybe you would like to put your rule into one of the existing groups: API Change, API Hints, Architectural, Bugs, Coding Idiom Violation, Design Flaws, Optimization, Potential Bugs, Rubric, SUnit, Style, Unclassified rules.
+
+You can also specify the severity of your rue by returning one of: \#information, \#warning, or \#error symbols from the \#severity method.
+
+\section{Reset the cache}
+To have quality assistant pick up your changes you have to reset a cache. Do this  looking for Renraku in the Setting Browser. Or simply executing:
+\begin{displaycode}{smalltalk}
+ReRuleManager reset
+\end{displaycode}
+
+When you load complete rules into the system, the cache will be reset automatically. But as you are creating a new rule and it is in the incomplete state you have to reset the cache once you are ready.
+
+\section{Running rules}
+Usually you don't have to run rules yourself, this is done by tools. But it is a good idea to be familiar with the API available in rules for developing your own tools and dubugging unexpected behaviour.
+
+
+First of all tools traverse the hierarchy of rule classes and selects the required ones buy testing them with \textcode{checksMethod}, \textcode{checksClass}, etc…
+
+The main method that the rules implement to check entities is \#check:forCritiquesDo:. It accepts the entity to be checked as the first argument, and the block to be evaluated for each critique. The block may accept one parameter which is a critique object. For example:
+\begin{displaycode}{smalltalk}
+rule
+	check: anEntity
+	forCritiquesDo: [ :critique |
+		"do something for each critique" ]
+\end{displaycode}
+
+
+There are also 3 convenience methods:
+
+\begin{itemize}
+    \item check: Accepts an entity to check and returns the collection of critiques.
+\end{itemize}
+
+\part{check:ifNoCritiques:}
+Similarly to previous one checks an entity and returns the collection of critiques. Additionally accepts a block that will be evaluated if no critiques are found.
+
+\part{check:forCritiquesDo:ifNone:}
+Similarly to \#check:forCritiquesDo: checks an entity and evaluates the block for each detected critique. Additionally accepts a block that will be evaluated if no critiques are found.
+
+\section{Special rules}
+There are certain special rules with predefined functionality that allows to easily perform complex checks.
+
+\subsection{ReNodeMatchRule}
+The base rule for Pharo code pattern matching (relies on rewrite expressions). The rule operates on AST nodes.
+
+Use the following methods in the initialization to setup your subclass:
+
+\begin{itemize}
+    \item matches:
+    \item addMatchingExpression:
+\end{itemize}
+
+add a string of rewrite expression to be matched by rule
+
+\begin{itemize}
+    \item matchesAny:
+\end{itemize}
+
+same as previous but takes a collection of strings to match
+
+
+
+\begin{itemize}
+    \item addMatchingMethod:
+\end{itemize}
+
+add a string of rewrite expression which should be parsed as a method
+
+
+you may use \#afterCheck:mappings: to do a post-matching validation of a matched node and mapping of wildcards.
+\begin{displaycode}{smalltalk}
+ReNodeMatchRule >> addMatchingExpression:
+	"add a string of rewrite expression to be matched by rule"
+
+ReNodeMatchRule >> addMatchingMethod:
+"add a string of rewrite expression which should be parsed as a method"
+
+ReNodeMatchRule >> matches:
+"add a string of rewrite expression to be matched by rule"
+
+ReNodeMatchRule >> matchesAny:
+"add a collection of rewrite expression strings to be matched by the rule"
+\end{displaycode}
+
+\subsection{ReNodeRewriteRule}
+The base rule for smalltalk code match \& rewrite rules. The rule operates on AST nodes.
+
+Use the following methods in the initialization to setup your subclass:
+
+\begin{itemize}
+    \item replace:with:
+    \item addMatchingExpression:rewriteTo:
+\end{itemize}
+
+add a \symbol{34}from-\textgreater{}to\symbol{34} pair of strings that represent a rewrite expression string to match and a rewrite expression to replace the matched node.
+
+\begin{itemize}
+    \item addMatchingMethod:rewriteTo:
+\end{itemize}
+
+same as the previous, but the rewrite expression are parsed as method definitions
+
+\begin{itemize}
+    \item replace:by:
+    \item addMatchingExpression:rewriteWith:
+\end{itemize}
+
+add 	a \symbol{34}from-\textgreater{}to\symbol{34} pair, first element of which is a rewrite expression in a form of a string that is used to match nodes. The second parameter is a block that has to return a node which should replace the matched one. The block may accept 2 atguments: the matched node, and a dictionary of wildcard variables mapping.
+
+
+
+\section{Example}
+There are two main concepts in Renraku rule and critiques. These two concepts
+are represented by abstract classes:  \textcode{ReAbstractRule} and \textcode{ReAbstractCritiques}.
+
+Each \textcode{ReAbstractRule} represents  a static validation rule that can be applied
+on a class, method, package or a node (a node refers to an AST node).
+
+Une \textcode{ReAbstractRule} specifies the messages of the rule, its severity ('warning' is the default)
+and the category in which the rule belongs (for example 'Optimization').
+
+Once executed, \textcode{ReAbstractRule} returns a list of  \textcode{ReAbstractCritiques}.
+Each \textcode{ReAbstractCritique} is linked precisely to the place where the rule failed.
+
+It is also possible to specify to automatically address the problem.
+
+Elle permet aussi d'associer, si on le souhaite, un \symbol{34}quickfix\symbol{34}
+pour automatiquement modifier le code.
+
+Dans notre cas, le but de la r\`{e}gle est de mettre en \'{e}vidence les variables
+temporaires non utilis\'{e}es dans le code (uniquement non utilis\'{e}es, pas non
+initialis\'{e}e ou autre). Si des variables temporaires sont identifi\'{e}es, alors, le
+quickfix propos\'{e} est de supprimer la variable en question.
+
+Pour faire ceci, on commence par cr\'{e}er une nouvelle r\`{e}gle\textcode{NRTemporaryNeverUsedRule} dans un package \textcode{NewRule}, en h\'{e}ritant de \textcode{ReAbstractRule}:
+\begin{displaycode}{smalltalk}
+ReAbstractRule subclass: #NRTemporaryNeverUsedRule
+	instanceVariableNames: ''
+	classVariableNames: ''
+	package: 'NewRules'
+\end{displaycode}
+
+Comme notre r\`{e}gle travaille sur des \'{e}l\'{e}ments tr\`{e}s fin d'un m\'{e}thode analys\'{e}e, on ne peut rester au niveau de la \symbol{34}m\'{e}thode\symbol{34} pour l'analyse, il faut d\'{e}cendre au niveau de chaque \textcode{Node} de l'ast de la m\'{e}thode. Il faut donc indiquer que cette r\`{e}gle s'applique uniquement sur des \textcode{Nodes}. Pour faire ceci, il faut surcharger la m\'{e}thode de classe \textcode{ReAbstractRule class\textgreater{}\textgreater{}checksNode}:
+\begin{displaycode}{smalltalk}
+NRTemporaryNeverUsedRule class >> checksNode
+	^ true
+\end{displaycode}
+
+On pr\'{e}cise ensuite le groupe auquel la r\`{e}gle va \^{e}tre associ\'{e} en surchargeant \textcode{ReAbstractRule\textgreater{}\textgreater{}\#group}:
+\begin{displaycode}{smalltalk}
+NRTemporaryNeverUsedRule >> group
+	^ 'Optimization'
+\end{displaycode}
+
+Puis, on indique le message qui sera affich\'{e} si la r\`{e}gle trouve un \'{e}l\'{e}ment
+fautif en surchargeant \textcode{ReAbstractRule \textgreater{}\textgreater{} name}:
+\begin{displaycode}{smalltalk}
+NRTemporaryNeverUsedRule>>name
+	^ 'Temporary variable is never used'
+\end{displaycode}
+
+Une r\`{e}gle doit ensuite fournir une impl\'{e}mentation de \symbol{34}\#basicCheck:\symbol{34}. Cette
+m\'{e}thode retourne vrai si l'\'{e}l\'{e}ment pass\'{e} en argument viole la r\`{e}gle. Elle est
+impl\'{e}ment\'{e}e ici simplement, si le noeud est une variable temporaire, alors, on
+v\'{e}rifie qu'elle a bien \'{e}t\'{e} utilis\'{e}e dans la s\'{e}quence de node qui la contient.
+\begin{displaycode}{smalltalk}
+NRTemporaryNeverUsedRule>>basicCheck: aNode
+	aNode isTemp ifFalse: [ ^ false ].
+	^ (self checkTemp: aNode isUsedIn: (aNode whoDefines: aNode name)) not
+\end{displaycode}
+
+L'impl\'{e}mentation du s\'{e}lecteur \textcode{checkTemp:isUsedIn:} est plut\^{o}t directe. On
+regarde dans toute les expressions de la s\'{e}quence d'instruction s'il existe une
+variable qui est utilis\'{e}e est qui porte le m\^{e}me nom que la variable temporaire
+dont on veut savoir si elle est effectivement utilis\'{e}e.
+\begin{displaycode}{smalltalk}
+NRTemporaryNeverUsedRule>>checkTemp: aTemp isUsedIn: statements
+	statements
+		do: [ :statement |
+			statement
+				nodesDo: [ :node |
+					(node isVariable and: [ node name = aTemp name and: [ node isUsed ] ])
+						ifTrue: [ ^ true ] ] ].
+	^ false
+\end{displaycode}
+
+Maintenant que la r\`{e}gle est \'{e}crite, il est possible d'\'{e}crire une nouvelle
+critique qui va permettre de mettre en surbrillance dans le code la variable
+temporaire fautive. On commence donc par cr\'{e}er une sous-classe de\textcode{ReAbstractCritique}. Comme cette critique va devoir garder un lien vers le node
+temporaire, on lui ajoute une variable d'instance \symbol{34}temp\symbol{34} (le nom est pas g\'{e}nial) :
+\begin{displaycode}{smalltalk}
+"Critique creation"
+ReAbstractCritique subclass: #NRTemporaryNeverUsedCritique
+instanceVariableNames: 'temp'
+classVariableNames: ''
+package: 'NewRules'
+\end{displaycode}
+
+On ajoute aussi des accesseurs \`{a} la variable d'instance \textcode{temp}:
+\begin{displaycode}{smalltalk}
+NRTemporaryNeverUsedCritique>>temporary
+	^ temp
+\end{displaycode}
+\begin{displaycode}{smalltalk}
+NRTemporaryNeverUsedCritique>>temporary: aTemp
+	temp := aTemp
+\end{displaycode}
+
+On propose maintenant une m\'{e}thode de classe pour la cr\'{e}ation de nouvelles
+instances qui va prendre en param\`{e}tre un \symbol{34}ReSourceAnchor\symbol{34}. Un \symbol{34}ReSourceAnchor\symbol{34}
+est un wrapper vers l'obets d'int\'{e}r\^{e}t :
+\begin{displaycode}{smalltalk}
+NRTemporaryNeverUsedCritique class>>withAnchor: anAnchor by: aRule temporary: aTemp
+	^ (self withAnchor: anAnchor by: aRule)
+		temporary: aTemp;
+		yourself
+\end{displaycode}
+
+Avec cette m\'{e}thode, la \symbol{34}Critique\symbol{34} cr\'{e}\'{e}e aura \`{a} la fois un lien vers l'objet
+d'int\'{e}r\^{e}t via le \symbol{34}sourceAnchor\symbol{34}, mais aussi un lien au node repr\'{e}sentant la
+variable temporaire fautive.
+
+N\'{e}anmoins, dans l'\'{e}tat actuel des choses, la \symbol{34}Critique\symbol{34} cr\'{e}\'{e}e n'est pas encore
+li\'{e}e \`{a} notre nouvelle r\`{e}gle. Par d\'{e}faut, ce sont des instances de
+\symbol{34}ReTrivialCritique\symbol{34} qui sont propos\'{e}e. Pour changer ceci, il faut surcharger
+\symbol{34}ReAbstractRule\textgreater{}\textgreater{}\#critiqueFor:\symbol{34}. \`{A} la place de la cr\'{e}ation de la
+\symbol{34}ReTrivialCritique\symbol{34}, on va cr\'{e}er une instance de la \symbol{34}Critique\symbol{34} que l'on vient
+juste d'\'{e}cire :
+\begin{displaycode}{smalltalk}
+NRTemporaryNeverUsedRule>>critiqueFor: aTemp
+	^ NRTemporaryNeverUsedCritique
+		withAnchor: (self anchorFor: aTemp)
+		by: self
+		temporary: aTemp
+\end{displaycode}
+
+Il faut noter ici l'utilisation du message \symbol{34}\#anchorFor:\symbol{34} qui permet d'obtenir un
+\symbol{34}ReSourceAnchor\symbol{34} \`{a} partir d'un \'{e}l\'{e}ment.
+
+Dans l'\'{e}tat actuel, c'est d\'{e}j\`{a} pas mal, mais pas compl\`{e}tement satisfaisant. On
+remarque que le \symbol{34}ReSourceAnchor\symbol{34} cr\'{e}\'{e} est un simple \symbol{34}ReSourceAnchor\symbol{34} et qu'il ne
+donne pas plus d'information. Dans notre cas, nous aimerions pouvoir avoir acc\`{e}s \`{a}
+l'interval qui repr\'{e}sente la variable dans le source code (en gros, le d\'{e}but et
+la fin de la temporaire dans la variable).
+
+Il existe plusieur sous-classes de \symbol{34}ReSourceAnchor\symbol{34}, dont
+\symbol{34}ReIntervalSourceAnchor\symbol{34} qui stocke par la m\^{e}me occasion l'interval de l'objet
+\symbol{34}observ\'{e}\symbol{34} dans le code source. On surcharge donc \symbol{34}ReAbstractRule\#anchorFor:\symbol{34} dans notre r\`{e}gle :
+\begin{displaycode}{smalltalk}
+NRTemporaryNeverUsedRule>>anchorFor: aNode
+	^ ReIntervalSourceAnchor entity: aNode interval: aNode sourceInterval
+\end{displaycode}
+
+Maintenant, la r\`{e}gle et la critique cr\'{e}\'{e} sont li\'{e}e. N\'{e}anmoins, on ne peux
+toujours pas effectuer de modification automatiquement du code. Il faut fournir
+quelques m\'{e}thode en plus \`{a} notre nouvelle critique pour \c{c}a. La m\'{e}thode
+\symbol{34}\#providesChange\symbol{34} va permettre d'indiquer que notre critique fournit un moyen de
+\symbol{34}fix\symbol{34} le code, et la m\'{e}thode \symbol{34}\#change\symbol{34} va retourner une instance de
+\symbol{34}RBRefactoryChange\symbol{34}. Cette instance repr\'{e}sente la modification effecivement
+effectu\'{e}e sur le code source. Il en existe beaucoup et certaines sont
+probablement tr\`{e}s pratiques, mais celle que j'ai utilis\'{e}e est la
+\symbol{34}RBAddMethodChange\symbol{34}.
+\begin{displaycode}{smalltalk}
+NRTemporaryNeverUsedCritique>>providesChange
+	^ true
+\end{displaycode}
+\begin{displaycode}{smalltalk}
+NRTemporaryNeverUsedCritique>>change
+	| parseTree |
+	parseTree := sourceAnchor entity parseTree.
+	parseTree
+		nodesDo: [ :node |
+			node isSequence
+				ifTrue: [ node removeTemporaryNamed: temp name ] ].
+	"alternative possible :
+	rewriter := RBParseTreeRewriter removeTemporaryNamed: temp name.
+	parseTree := rewriter executeTree: sourceAnchor entity parseTree; tree."
+	^ RBAddMethodChange compile: parseTree newSource in: sourceAnchor entity methodClass
+\end{displaycode}
+
+La m\'{e}thode de modification du code source est elle aussi plut\^{o}t directe, on
+traverse l'ast et on enl\`{e}ve les \symbol{34}temporary\symbol{34} fautives de chaques s\'{e}quences. Il
+faut noter ici que le \symbol{34}sourceAnchor entity\symbol{34} retourne la m\'{e}thode dans laquelle le
+soucis a \'{e}t\'{e} d\'{e}tect\'{e} et non pas le node. M\^{e}me si l'on a explicitement cr\'{e}\'{e} la
+\symbol{34}critique\symbol{34} avec le \symbol{34}TemporaryNode\symbol{34} comme \symbol{34}sourceAnchor\symbol{34}, il se trouve que
+\symbol{34}ReCriticEngine\textgreater{}\textgreater{}\#nodeCritiquesOf:\symbol{34} r\'{e}assigne la \symbol{34}CompiledMethode\symbol{34} comme
+\symbol{34}sourceAnchor\symbol{34} apr\`{e}s (on peut le voir l.27 \`{a} 31) :
+\begin{displaycode}{smalltalk}
+rule
+	check: node
+	forCritiquesDo: [ :critique |
+		critique sourceAnchor initializeEnitity: aMethod. 
+		# stuffs that overrides the node, also typo: '.*Enitity' -> '.*Entity'
+		critiques add: critique ]
+\end{displaycode}
+
+\section{Extending renraku}
+SmartTest selects automatically some tests to be run automatically each time a new method is compiled.
+It is clearly a new kind of rule.
+
+Pour SmartTest, comme nous sommes sur un tout nouveau type de r\`{e}gle, j'ai \'{e}tendu la classe 'ReAbstractRule' pour creer les r\`{e}gles.
+Il y a deux r\`{e}gles, l'analyse
+
+\begin{itemize}
+    \item Pour les m\'{e}thodes
+    \item Pour les classes
+\end{itemize}
+
+Pour les rules, il y a deux m\'{e}thodes importante \`{a} chaque fois
+
+\begin{itemize}
+    \item \#check:forCritiquesDo:
+    \item \#basicCheck:
+\end{itemize}
+
+\part{basicCheck: return true si le critique block doit \^{e}tre execut\'{e} (\#basicCheck: est appell\'{e} dans \#check:forCritiquesDo:}
+\part{check:forCritiquesDo: execute un critique block avec en param\`{e}tre une critique.}
+Dans un premier temps on v\'{e}rifie que s'il y a des tests relatifs \`{a} la classe ou \`{a} la m\'{e}thode.
+Si oui on execute le critique block avec en parametre une critique expliquant que l'on a besoin de tests
+Si non avec une critique donnant les tests trouv\'{e}s.
+
+Il y a quatre critiques que j'ai cr\'{e}\'{e}es
+
+\begin{itemize}
+    \item SmTMethodNeedTestsCritique
+    \item SmTClassNeedTestsCritique qui \'{e}tendent de SmTNeedTestsCritique
+    \item SmTMethodRelativeTestsCritique
+    \item SmTClassRelativeTestsCritique qui \'{e}tendent de SmTRelativeTestsCritique
+\end{itemize}
+
+Pour ces derni\`{e}res: Il n'y a que le \#title et la \#description qui changent
+SmTRelativeTestsCritique d\'{e}finit aussi une \#actions qui ouvre la fenetre avec les tests
+
+Pour les \textcode{SmTNeedTestsCritique}
+Pour \textcode{SmTClassNeedTestsCritique}, il n'y a que le \textcode{title} et la \textcode{description}
+
+Pour contre pour SmTMethodNeedTestsCritique, il y a la petit clef \`{a} molette.
+Donc j'ai \'{e}tendu \textcode{providesChange} pour que cela retourne true
+
+Ensuite j'ai juste eu \`{a} \'{e}crire la m\'{e}thode\textcode{execute} qui cr\'{e}e un test (et la fenetre du fix qui apparait etc. est d\'{e}j\`{a} dans Reneraku.)
+
+\chapter{Renraku Model}
+\section{Entities}
+Renraku is a framework for defining and processing quality rules. The framework operates with three main concepts: entities, rules and critiques.
+
+\begin{itemize}
+    \item Entities. Entities are not a part of Renraku, but Renraku is validating entities. Theoretically entity can be any object, but in practice we mostly focus on code entities such as methods, classes, packages, AST nodes.
+    \item Rules. Rules are the objects that describe constraints about entities. A rule can check an entity and produce critiques that describe the violations of the entity according to the rule. Rules are constraint descriptions about entities. Think of a rule as a function that consumes an entity and produces a collection of critiques about it (which can be empty if there are no violations)
+    \item Critiques. Critique is an object that binds an entity with a rule that is violated by that entity. The critique describes a specific violation, and may provide a solutions to fix it.
+\end{itemize}
+
+\section{Critiques}
+Critique is an object that binds an entity with a rule that is violated by that entity. The critique describes a specific violation, and may provide a solution to fix it.
+
+\textcode{ReAbstractCritique} is the root of the critiques hierarchy.
+
+A critique has a reference to the rule that reported the violation.
+The rule's \textcode{name} is used as the critique’s \textcode{title} and the rule's \textcode{rationale} is used as the \textcode{description} of the critique.
+
+A critique has a reference to the criticized entity. This link is established through \textcode{ReSourceAnchor}. A source anchor has a reference to the actual class, method, or other entity that is criticized. An anchor also has a \textcode{providesInterval} method that returns a boolean indicating if the anchor provides a selection interval to the actual source of the critique. The interval can be accessed through the \textcode{interval} method.
+
+There are two subclasses of \textcode{ReSourceAnchor}.\textcode{ReIntervalSourceAnchor} stores the actual interval object which is set during initialization.\textcode{ReSearchStringSourceAnchor} stores a searchString which will be searched for in the entities source code on demand to find an interval of substring.
+
+A critique has the \textcode{providesChange} method which returns a boolean value specifying whether the critique can provide a change which will resolve the issue.
+The \textcode{change} method can be used to obtain an object of \textcode{RBRefactoryChange} kind.
+
+One can override \textcode{actions} method to return a list of \textcode{RePropertyAction} objects. Tools can use these objects to provide a user with custom actions defined by critiques themselves.
+
+I am an action that appears in the Nautiluas qa plugin next the the item's title.
+
+icon - a Form that will appear on the button (green square by default)
+
+description - the description that will be present on popup on hower
+
+action - a two (ortional) parameter block that is evaluated with the critic and the current code entity (class, method…) when the button is pressed
+No newline at end of file
+
+\section{Migrating rules to renraku}
+Lately Pharo tools moved to Renraku framework which requires a slightly different implementation from rules as defined in the refactoring browser.
+
+
+While you can achieve much more features by reading the whole documentation and using the complete set of Renraku possibilities, this book contains a few simple steps to help you converting existing rules to work with Renraku model.
+
+\subsection{Generic rule}
+To convert a generic rule (one that simply checks method, class or package) to work with Renraku you have to follow 3 simple steps:
+
+\begin{itemize}
+    \item Inheritance: change superclass to ReAbstractRule.
+    \item Interest: Specify which entities your rules is interested in by overriding a method on the class side to return true. If the rule was checking methods, then  override =checksMethod\textcode{, for classes override }checksClass\textcode{, and for packages }checksPackage`.
+    \item Checking: Implement \textcode{basicCheck:} in a way that it will return true if the argument violated the rule and false otherwise. The quality tools will pass you only the arguments of the type you've expressed interest in.
+\end{itemize}
+To convert parse tree rules
+Parse tree rules are subclasses of RBParseTreeLintRule, change their superclass to ReNodeMatchRule.
+
+Then change the initialization method. Instead of sending match-specifying methods to \textcode{matcher}, send them to \textcode{self}. The rest of API is similar:
+
+\begin{itemize}
+    \item \textcode{matches:do:} -\textgreater{} \textcode{matches:}
+    \item \textcode{matchesMethod:do:} -\textgreater{} \textcode{addMatchingMethod:}
+    \item \textcode{matchesAnyOf:do:} -\textgreater{} \textcode{matchesAny:}
+\end{itemize}
+
+So the old initialization:
+\begin{displaycode}{smalltalk}
+self matcher 
+	matches: '`var := `var'
+	do: [ :node :answer | node ]
+\end{displaycode}
+
+will become:
+\begin{displaycode}{smalltalk}
+self matches: '`var := `var'
+\end{displaycode}
+
+You have noticed that new API is missing the \symbol{34}do:\symbol{34} part. First of all, almost no rules use this functionality and you can check node in the matching expression with \textcode{`\{:node \textbar{} \symbol{34}check node\symbol{34} \textbackslash{}\}} syntax.
+
+\section{Rewrite rules}
+To convert parse tree rules, subclasses of \textcode{RBTransformationRule}, change their superclass to \textcode{ReNodeRewriteRule}.
+
+Then change the initialization method. Instead of sending transformation-specifying methods to \textcode{rewriteRule}, send them to \textcode{self}. The rest of API is similar:
+
+\begin{itemize}
+    \item \textcode{replace:with:} -\textgreater{} \textcode{replace:with:} (noChange)
+    \item \textcode{replaceMethod:with:} -\textgreater{} \textcode{addMatchingMethod:rewriteTo:}
+    \item \textcode{?} -\textgreater{} \textcode{replace:by:} (second argument is a block which accepts matched node and returns a node that should be used for replacement).
+\end{itemize}
+
+So the old initialization:
+\begin{displaycode}{smalltalk}
+self rewriteRule
+	replace: '`var := `var' with: 
+\end{displaycode}
+
+will become:
+\begin{displaycode}{smalltalk}
+self replace: '`var := `var' with: 
+\end{displaycode}
+
+\section{Better post-checks}
+The new rules also give you a move powerful way of post-checking matched nodes. You can override \textcode{afterCheck:mappings:} method and return true if node really violates the rule or false otherwise. The first argument passed to the method is the matched node object, while the second argument is a dictionary of bindings for the wildcards in the rule.
+For example if the pattern \textcode{'`var := `var'} will match expression \textcode{'a := a'} the matches dictionary will contain one entry where key is \textcode{RBPatternVariableNode\textbackslash{}(`var\textbackslash{}) } and value is `RBVariableNode(a)==.
+
+
+
+\bibliographystyle{alpha}
+\bibliography{book.bib}
+
+% lulu requires an empty page at the end. That's why I'm using
+% \backmatter here.
+\backmatter
+
+% Index would go here
+
+\end{document}
